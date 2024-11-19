@@ -82,7 +82,11 @@ void loop() {
     // Verificar si ha pasado el tiempo suficiente desde la última vez que se envió la distancia
   if (millis() - lastMillis >= interval) {
     lastMillis = millis();  // Actualizar la última vez que se realizó la acción
-    Serial.println(distancia);
+      Serial.print("Distancia_actual:");
+      Serial.print(distancia);
+      Serial.print(",");
+      Serial.print("Distancia_referencia:");
+      Serial.println(distanciaParada);
     //mandarDistancia(distancia, distanciaParada);
   }
 
