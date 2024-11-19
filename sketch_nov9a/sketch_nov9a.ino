@@ -14,23 +14,15 @@ float K = 1.8; // Constante de proporcionalidad, ajustar según necesidad
 #define ECHO_PIN 3
 const int distanciaParada = 20*10;  // Distancia en cm para detener el robot si hay un objeto
 
-const int builtInLedPin = LED_BUILTIN;
 
 // Variables de estado
 bool robotActivo = false;
 int buttonState = HIGH;
 int lastButtonState = HIGH;
 
-#define NUM_READINGS 5  // Número de lecturas para el filtro de mediana
-
-unsigned long lastMillis = 0;  // Guarda la última vez que se realizó la acción
-const long interval = 100;    // Intervalo de tiempo para las acciones (1000 ms = 1 segundo)
-
 void setup() {
   pinMode(motorAvancePin1, OUTPUT);
   pinMode(motorAvancePin2, OUTPUT);
-  
-  pinMode(builtInLedPin, OUTPUT);
   
   pinMode(buttonPin, INPUT);
   pinMode(TRIG_PIN, OUTPUT);
@@ -38,8 +30,10 @@ void setup() {
 
   Serial.begin(9600);
   //Serial.println("Control de brazo con balance de sensores y avance.");
-  digitalWrite(builtInLedPin, LOW);
 }
+
+int intentos = 20;
+
 void loop() {
   // Leer el estado del botón y alternar el estado del robot
   buttonState = digitalRead(buttonPin);
@@ -47,11 +41,9 @@ void loop() {
     delay(100);  // Anti-rebote
     robotActivo = !robotActivo;
     if (robotActivo) {
-      digitalWrite(builtInLedPin, HIGH);
       //Serial.println("Robot activado.");
     } else {
       detenerMotorAvance();
-      digitalWrite(builtInLedPin, LOW);
       //Serial.println("Robot desactivado.");
     }
   }
@@ -61,49 +53,55 @@ void loop() {
 
   // Solo funciona si el robot está activo
   if (robotActivo) {
-
-    int error = distancia - distanciaParada; // Calculamos el error con respecto a la distancia de parada
-    // Multiplicar el error por una K y variable de ajuste (si es necesario)
-    int pwm = velocidadMinima + K * abs(error);
-    pwm = constrain(pwm, velocidadMinima, velocidadMaxima);
     // Verificar la distancia con el sensor ultrasónico
-    if (error == 0) {
+    int distancia = medirDistancia();
+    if (distancia < distanciaParada) {
       detenerMotorAvance();
-      digitalWrite(builtInLedPin, LOW);
+      //Serial.println("Obstáculo detectado, robot detenido.");
       robotActivo = false;  // Desactiva el robot al detectar el obstáculo
-    } else if (error > 0) {
-      // Asegurarse de que PWM esté dentro de los límites permitidos     
+      return;
+    } else if (distancia > distanciaParada) {
+      //int velocidadAvance = map(distancia, distanciaParada, 100, 70, 200); 
+      // Multiplicar el error por una K y variable de ajuste (si es necesario)
+      //pwm = pwm_min + k * error; // El rango de valores de k debe elegirse de forma tal que K * el error < 255 
+
+      int error = distancia - distanciaParada; // Calculamos el error con respecto a la distancia de parada
+      int pwm = velocidadMinima + K * error;
+
+      // Asegurarse de que PWM esté dentro de los límites permitidos
+      pwm = constrain(pwm, velocidadMinima, velocidadMaxima);
       avanzar(pwm);
-    } else if (error < 0) {
-      retroceder(pwm);
     }
   }
-    // Verificar si ha pasado el tiempo suficiente desde la última vez que se envió la distancia
-  if (millis() - lastMillis >= interval) {
-    lastMillis = millis();  // Actualizar la última vez que se realizó la acción
+
+  if(intentos == 100) {
     Serial.println(distancia);
     //mandarDistancia(distancia, distanciaParada);
+    intentos = 0;
   }
+
+  intentos++;    
 }
 
 void avanzar(int velocidad) {
   analogWrite(motorAvancePin1, velocidad);
   digitalWrite(motorAvancePin2, LOW);
+  //Serial.print("Avanzando con velocidad: ");
+  //Serial.println(velocidad);
 }
 
 void retroceder(int velocidad) {
   analogWrite(motorAvancePin2, velocidad);
   digitalWrite(motorAvancePin1, LOW);
+  //Serial.print("Retrocediendo con velocidad: ");
+  //Serial.println(velocidad);
 }
 
 void detenerMotorAvance() {
   digitalWrite(motorAvancePin1, LOW);
   digitalWrite(motorAvancePin2, LOW);
+  //Serial.println("Motor de avance detenido.");
 }
-
-int readings[NUM_READINGS];    // array de lecturas del sensor
-int readIndex = 0;             // índice de la lectura actual
-int totalReadings = 0;         // número total de lecturas almacenadas, max NUM_READINGS
 
 int medirDistancia() {
   digitalWrite(TRIG_PIN, LOW);
@@ -112,46 +110,14 @@ int medirDistancia() {
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
 
-  long duration = pulseIn(ECHO_PIN, HIGH);
-  int distance = (int)(duration * 0.0343 / 2);
+  long duracion = pulseIn(ECHO_PIN, HIGH);
+  float distancia = (duracion * 0.0343 / 2)*10;
 
-  // Guarda la lectura en el array y actualiza el índice circular
-  readings[readIndex] = distance * 10;
-  readIndex = (readIndex + 1) % NUM_READINGS;
+ /* Serial.print("Distancia: ");
+  Serial.print(distancia);
+  Serial.println(" cm.");*/
 
-  // Actualiza el contador de lecturas hasta alcanzar el número máximo
-  if (totalReadings < NUM_READINGS) {
-    totalReadings++;
-  }
-
-  // Calcula y retorna la mediana de las lecturas
-  return calculateMedian(readings, totalReadings);
-}
-
-int calculateMedian(int arr[], int numElements) {
-  int sortedArray[NUM_READINGS];  // array temporal para guardar las lecturas ordenadas
-  memcpy(sortedArray, arr, numElements * sizeof(int));  // copia para no modificar el original
-  // Ordena el array
-  insertionSort(sortedArray, numElements);
-  // Calcula la mediana
-  if (numElements % 2 == 0) {
-    return (sortedArray[numElements/2 - 1] + sortedArray[numElements/2]) / 2;
-  } else {
-    return sortedArray[numElements/2];
-  }
-}
-
-void insertionSort(int arr[], int numElements) {
-  for (int i = 1; i < numElements; i++) {
-    int key = arr[i];
-    int j = i - 1;
-    // Mueve los elementos de arr[0..i-1], que son mayores que key, a una posición adelante
-    while (j >= 0 && arr[j] > key) {
-      arr[j + 1] = arr[j];
-      j = j - 1;
-    }
-    arr[j + 1] = key;
-  }
+  return (int) distancia;
 }
 
 byte dataOut[10];
